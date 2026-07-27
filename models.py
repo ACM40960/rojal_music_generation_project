@@ -1,192 +1,127 @@
 import torch
 import torch.nn as nn
+
 import config
 
 
-def init_weights(m):
-    """Xavier / Kaiming Initialization for linear layers."""
-    if isinstance(m, nn.Linear):
-        nn.init.xavier_uniform_(m.weight)
-        if m.bias is not None:
-            nn.init.zeros_(m.bias)
+class FrameEmbedding(nn.Module):
+    """Embeds pitch+duration per voice, concatenates across the 4 voices into one
+    synchronized SATB frame vector per timestep."""
 
-
-class BaseMusicModel(nn.Module):
-    """Base class with dual embedding layers and ModuleList output heads for SATB voices."""
-    def __init__(self, num_pitches, num_durations,
-                 pitch_embed_dim=config.PITCH_EMBED_DIM,
-                 dur_embed_dim=config.DURATION_EMBED_DIM,
-                 hidden_dim=config.HIDDEN_DIM):
+    def __init__(self, pitch_vocab_size, dur_vocab_size, embed_dim=config.EMBED_DIM):
         super().__init__()
-        self.num_pitches = num_pitches
-        self.num_durations = num_durations
-        
-        self.pitch_embed = nn.Embedding(num_pitches, pitch_embed_dim, padding_idx=0)
-        self.dur_embed = nn.Embedding(num_durations, dur_embed_dim, padding_idx=0)
-        
-        self.frame_input_dim = 4 * (pitch_embed_dim + dur_embed_dim)
-        
-        # Clean ModuleList Head Organization as requested
-        self.pitch_heads = nn.ModuleList([nn.Linear(hidden_dim, num_pitches) for _ in range(4)])
-        self.duration_heads = nn.ModuleList([nn.Linear(hidden_dim, num_durations) for _ in range(4)])
+        self.pitch_embeds = nn.ModuleList(
+            [nn.Embedding(pitch_vocab_size, embed_dim, padding_idx=0) for _ in range(config.NUM_VOICES)]
+        )
+        self.dur_embeds = nn.ModuleList(
+            [nn.Embedding(dur_vocab_size, embed_dim, padding_idx=0) for _ in range(config.NUM_VOICES)]
+        )
+        self.frame_dim = config.NUM_VOICES * 2 * embed_dim
 
-    def embed_frames(self, pitch_in, dur_in):
-        """
-        pitch_in: (B, W, 4)
-        dur_in: (B, W, 4)
-        Returns: (B, W, 4 * (pitch_dim + dur_dim))
-        """
-        B, W, _ = pitch_in.shape
-        p_emb = self.pitch_embed(pitch_in)  # (B, W, 4, pitch_dim)
-        d_emb = self.dur_embed(dur_in)      # (B, W, 4, dur_dim)
-        
-        frame_emb = torch.cat([p_emb, d_emb], dim=-1)  # (B, W, 4, pitch_dim + dur_dim)
-        frame_emb = frame_emb.view(B, W, -1)           # (B, W, 4 * (pitch_dim + dur_dim))
-        return frame_emb
+    def forward(self, pitch_idx, dur_idx):
+        # pitch_idx, dur_idx: (batch, seq_len, 4)
+        voice_frames = []
+        for v in range(config.NUM_VOICES):
+            p_emb = self.pitch_embeds[v](pitch_idx[..., v])
+            d_emb = self.dur_embeds[v](dur_idx[..., v])
+            voice_frames.append(torch.cat([p_emb, d_emb], dim=-1))
+        return torch.cat(voice_frames, dim=-1)  # (batch, seq_len, frame_dim)
 
-    def compute_heads(self, hidden_features):
-        """
-        hidden_features: (B, hidden_dim)
-        Returns:
-            pitch_logits: List of 4 tensors, each of shape (B, num_pitches)
-            dur_logits: List of 4 tensors, each of shape (B, num_durations)
-        """
-        pitch_logits = [head(hidden_features) for head in self.pitch_heads]
-        dur_logits = [head(hidden_features) for head in self.duration_heads]
+
+class OutputHeads(nn.Module):
+    def __init__(self, in_dim, pitch_vocab_size, dur_vocab_size):
+        super().__init__()
+        self.pitch_heads = nn.ModuleList([nn.Linear(in_dim, pitch_vocab_size) for _ in range(config.NUM_VOICES)])
+        self.duration_heads = nn.ModuleList([nn.Linear(in_dim, dur_vocab_size) for _ in range(config.NUM_VOICES)])
+
+    def forward(self, x):
+        pitch_logits = [head(x) for head in self.pitch_heads]
+        dur_logits = [head(x) for head in self.duration_heads]
         return pitch_logits, dur_logits
 
 
-class MLPBaseline(BaseMusicModel):
-    """Linear Neural Network Baseline."""
-    def __init__(self, num_pitches, num_durations, window_length=config.WINDOW_LENGTH, **kwargs):
-        super().__init__(num_pitches, num_durations, **kwargs)
-        flattened_dim = window_length * self.frame_input_dim
-        
-        self.mlp = nn.Sequential(
-            nn.Linear(flattened_dim, config.HIDDEN_DIM),
-            nn.LayerNorm(config.HIDDEN_DIM),
-            nn.ReLU(),
-            nn.Dropout(config.DROPOUT),
-            nn.Linear(config.HIDDEN_DIM, config.HIDDEN_DIM),
-            nn.LayerNorm(config.HIDDEN_DIM),
-            nn.ReLU(),
-            nn.Dropout(config.DROPOUT)
-        )
-        self.apply(init_weights)
-
-    def forward(self, pitch_in, dur_in):
-        frame_emb = self.embed_frames(pitch_in, dur_in)  # (B, W, frame_input_dim)
-        flattened = frame_emb.reshape(frame_emb.size(0), -1)  # (B, W * frame_input_dim)
-        hidden = self.mlp(flattened)  # (B, hidden_dim)
-        return self.compute_heads(hidden)
-
-
-class VanillaRNN(BaseMusicModel):
-    """2-Layer Vanilla RNN Model."""
-    def __init__(self, num_pitches, num_durations, **kwargs):
-        super().__init__(num_pitches, num_durations, **kwargs)
-        self.rnn = nn.RNN(
-            input_size=self.frame_input_dim,
-            hidden_size=config.HIDDEN_DIM,
-            num_layers=config.NUM_LAYERS,
-            batch_first=True,
-            dropout=config.DROPOUT if config.NUM_LAYERS > 1 else 0.0
-        )
-        self.norm = nn.LayerNorm(config.HIDDEN_DIM)
-        self.dropout = nn.Dropout(config.DROPOUT)
-        self.apply(init_weights)
-
-    def forward(self, pitch_in, dur_in):
-        frame_emb = self.embed_frames(pitch_in, dur_in)  # (B, W, frame_input_dim)
-        out, _ = self.rnn(frame_emb)  # (B, W, hidden_dim)
-        last_out = self.dropout(self.norm(out[:, -1, :]))  # (B, hidden_dim)
-        return self.compute_heads(last_out)
-
-
-class LSTMMusic(BaseMusicModel):
-    """2-Layer LSTM Model."""
-    def __init__(self, num_pitches, num_durations, **kwargs):
-        super().__init__(num_pitches, num_durations, **kwargs)
-        self.lstm = nn.LSTM(
-            input_size=self.frame_input_dim,
-            hidden_size=config.HIDDEN_DIM,
-            num_layers=config.NUM_LAYERS,
-            batch_first=True,
-            dropout=config.DROPOUT if config.NUM_LAYERS > 1 else 0.0
-        )
-        self.norm = nn.LayerNorm(config.HIDDEN_DIM)
-        self.dropout = nn.Dropout(config.DROPOUT)
-        self.apply(init_weights)
-
-    def forward(self, pitch_in, dur_in):
-        frame_emb = self.embed_frames(pitch_in, dur_in)  # (B, W, frame_input_dim)
-        out, _ = self.lstm(frame_emb)  # (B, W, hidden_dim)
-        last_out = self.dropout(self.norm(out[:, -1, :]))  # (B, hidden_dim)
-        return self.compute_heads(last_out)
-
-
-class GRUMusic(BaseMusicModel):
-    """2-Layer GRU Model."""
-    def __init__(self, num_pitches, num_durations, **kwargs):
-        super().__init__(num_pitches, num_durations, **kwargs)
-        self.gru = nn.GRU(
-            input_size=self.frame_input_dim,
-            hidden_size=config.HIDDEN_DIM,
-            num_layers=config.NUM_LAYERS,
-            batch_first=True,
-            dropout=config.DROPOUT if config.NUM_LAYERS > 1 else 0.0
-        )
-        self.norm = nn.LayerNorm(config.HIDDEN_DIM)
-        self.dropout = nn.Dropout(config.DROPOUT)
-        self.apply(init_weights)
-
-    def forward(self, pitch_in, dur_in):
-        frame_emb = self.embed_frames(pitch_in, dur_in)  # (B, W, frame_input_dim)
-        out, _ = self.gru(frame_emb)  # (B, W, hidden_dim)
-        last_out = self.dropout(self.norm(out[:, -1, :]))  # (B, hidden_dim)
-        return self.compute_heads(last_out)
-
-
-class PitchOnlyBaseline(nn.Module):
-    """Ablation Model: LSTM without Duration Embeddings."""
-    def __init__(self, num_pitches, pitch_embed_dim=config.PITCH_EMBED_DIM, hidden_dim=config.HIDDEN_DIM):
+class ChoraleMLP(nn.Module):
+    def __init__(self, pitch_vocab_size, dur_vocab_size, window_size=config.WINDOW_SIZE,
+                 embed_dim=config.EMBED_DIM, hidden_dim=config.HIDDEN_DIM):
         super().__init__()
-        self.num_pitches = num_pitches
-        self.pitch_embed = nn.Embedding(num_pitches, pitch_embed_dim, padding_idx=0)
-        self.frame_input_dim = 4 * pitch_embed_dim
-        
-        self.lstm = nn.LSTM(
-            input_size=self.frame_input_dim,
+        self.frame_embed = FrameEmbedding(pitch_vocab_size, dur_vocab_size, embed_dim)
+        flat_dim = window_size * self.frame_embed.frame_dim
+        self.fc = nn.Linear(flat_dim, hidden_dim)
+        self.norm = nn.LayerNorm(hidden_dim)
+        self.act = nn.ReLU()
+        self.heads = OutputHeads(hidden_dim, pitch_vocab_size, dur_vocab_size)
+        self._init_weights()
+
+    def _init_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                nn.init.zeros_(m.bias)
+
+    def forward(self, pitch_idx, dur_idx):
+        frames = self.frame_embed(pitch_idx, dur_idx)
+        flat = frames.reshape(frames.size(0), -1)
+        x = self.act(self.norm(self.fc(flat)))
+        return self.heads(x)
+
+
+class _RecurrentBase(nn.Module):
+    rnn_cls = None
+
+    def __init__(self, pitch_vocab_size, dur_vocab_size, embed_dim=config.EMBED_DIM,
+                 hidden_dim=config.HIDDEN_DIM, num_layers=config.NUM_LAYERS, dropout=config.DROPOUT):
+        super().__init__()
+        self.frame_embed = FrameEmbedding(pitch_vocab_size, dur_vocab_size, embed_dim)
+        self.rnn = self.rnn_cls(
+            input_size=self.frame_embed.frame_dim,
             hidden_size=hidden_dim,
-            num_layers=config.NUM_LAYERS,
+            num_layers=num_layers,
             batch_first=True,
-            dropout=config.DROPOUT
+            dropout=dropout if num_layers > 1 else 0.0,
         )
         self.norm = nn.LayerNorm(hidden_dim)
-        self.dropout = nn.Dropout(config.DROPOUT)
-        self.pitch_heads = nn.ModuleList([nn.Linear(hidden_dim, num_pitches) for _ in range(4)])
-        self.apply(init_weights)
+        self.dropout = nn.Dropout(dropout)
+        self.heads = OutputHeads(hidden_dim, pitch_vocab_size, dur_vocab_size)
+        self._init_weights()
 
-    def forward(self, pitch_in, dur_in=None):
-        B, W, _ = pitch_in.shape
-        p_emb = self.pitch_embed(pitch_in).view(B, W, -1)  # (B, W, 4 * pitch_embed_dim)
-        out, _ = self.lstm(p_emb)
-        last_out = self.dropout(self.norm(out[:, -1, :]))
-        pitch_logits = [head(last_out) for head in self.pitch_heads]
-        # Return dummy duration logits matching dummy duration targets
-        return pitch_logits, None
+    def _init_weights(self):
+        for name, param in self.rnn.named_parameters():
+            if "weight" in name:
+                nn.init.xavier_uniform_(param)
+            elif "bias" in name:
+                nn.init.zeros_(param)
+        for m in (self.heads,):
+            for lin in m.modules():
+                if isinstance(lin, nn.Linear):
+                    nn.init.xavier_uniform_(lin.weight)
+                    nn.init.zeros_(lin.bias)
+
+    def forward(self, pitch_idx, dur_idx):
+        frames = self.frame_embed(pitch_idx, dur_idx)
+        out, _ = self.rnn(frames)
+        last = self.dropout(self.norm(out[:, -1, :]))
+        return self.heads(last)
 
 
-if __name__ == "__main__":
-    B, W = 16, 32
-    p_in = torch.randint(0, 40, (B, W, 4))
-    d_in = torch.randint(0, 8, (B, W, 4))
+class ChoraleRNN(_RecurrentBase):
+    rnn_cls = nn.RNN
 
-    for ModelClass in [MLPBaseline, VanillaRNN, LSTMMusic, GRUMusic]:
-        model = ModelClass(num_pitches=42, num_durations=10)
-        p_logits, d_logits = model(p_in, d_in)
-        print(f"{ModelClass.__name__} -> Pitch Logits shape: 4 x {p_logits[0].shape}, Dur Logits shape: 4 x {d_logits[0].shape}")
 
-    ablation_model = PitchOnlyBaseline(num_pitches=42)
-    p_logits, _ = ablation_model(p_in)
-    print(f"PitchOnlyBaseline -> Pitch Logits shape: 4 x {p_logits[0].shape}")
+class ChoraleLSTM(_RecurrentBase):
+    rnn_cls = nn.LSTM
+
+
+class ChoraleGRU(_RecurrentBase):
+    rnn_cls = nn.GRU
+
+
+MODEL_REGISTRY = {
+    "mlp": ChoraleMLP,
+    "rnn": ChoraleRNN,
+    "lstm": ChoraleLSTM,
+    "gru": ChoraleGRU,
+}
+
+
+def build_model(name, pitch_vocab_size, dur_vocab_size):
+    return MODEL_REGISTRY[name](pitch_vocab_size, dur_vocab_size)
