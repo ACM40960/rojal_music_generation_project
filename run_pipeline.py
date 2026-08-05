@@ -35,6 +35,11 @@ def run(n_cut_half_pieces=15, temperature=0.9):
     print("\n=== cut-half generation + musical evaluation ===")
     eval_pieces = [p for p in bundle["test_pieces"] if p["pitch"].shape[0] >= 2 * config.WINDOW_SIZE][:n_cut_half_pieces]
     muspy_results = {}
+    first_model_name = next(iter(trained_models))
+
+    # Collect cut-half generation outputs across all models for the primary test chorale (eval_pieces[0])
+    sample_piece = eval_pieces[0]
+    sample_piece_results = {}
 
     for name, model in trained_models.items():
         gen_metrics_list, real_metrics_list, note_accs = [], [], []
@@ -46,15 +51,23 @@ def run(n_cut_half_pieces=15, temperature=0.9):
             real_metrics_list.append(musical["real_bach"])
 
             if i == 0:
+                sample_piece_results[name] = result
+                piece_slug = "".join(c if c.isalnum() else "_" for c in piece["id"])[:40]
+
                 midi_path = os.path.join(config.MIDI_DIR, f"{name}_continuation_example.mid")
                 generate.write_continuation_midi(result, bundle["pitch_vocab"], bundle["dur_vocab"], midi_path,
                                                   title=f"{name.upper()} continuation of {piece['id']}")
-                visualize.plot_piano_roll(
-                    result["generated_pitch_idx"], result["generated_dur_idx"],
-                    bundle["pitch_vocab"], bundle["dur_vocab"],
-                    f"{name.upper()} generated continuation — {piece['id']}",
-                    os.path.join(config.PLOTS_DIR, f"{name}_piano_roll.png"),
-                )
+
+                if name == first_model_name:
+                    gt_result = {
+                        "prompt_pitch_idx": result["prompt_pitch_idx"],
+                        "prompt_dur_idx": result["prompt_dur_idx"],
+                        "generated_pitch_idx": result["actual_pitch_idx"],
+                        "generated_dur_idx": result["actual_dur_idx"],
+                    }
+                    gt_midi_path = os.path.join(config.MIDI_DIR, f"ground_truth_{piece_slug}.mid")
+                    generate.write_continuation_midi(gt_result, bundle["pitch_vocab"], bundle["dur_vocab"],
+                                                      gt_midi_path, title=f"Real Bach — {piece['id']}")
 
         muspy_results[name] = {
             "generated": music_metrics.average_metrics(gen_metrics_list),
@@ -67,12 +80,26 @@ def run(n_cut_half_pieces=15, temperature=0.9):
         }
         print(f"{name} cut-half musical eval: {muspy_results[name]}")
 
+    # Generate 5-panel piano roll comparison matching thesis specification
+    visualize.plot_multi_panel_piano_roll_comparison(
+        sample_piece_results,
+        sample_piece_results[first_model_name]["prompt_pitch_idx"],
+        sample_piece_results[first_model_name]["prompt_dur_idx"],
+        sample_piece_results[first_model_name]["actual_pitch_idx"],
+        sample_piece_results[first_model_name]["actual_dur_idx"],
+        bundle["pitch_vocab"],
+        bundle["dur_vocab"],
+        out_path=os.path.join(config.PLOTS_DIR, "multi_panel_piano_roll.png"),
+    )
+
+
     with open(os.path.join(config.OUTPUT_DIR, "musical_eval_results.json"), "w") as f:
         json.dump(muspy_results, f, indent=2)
 
     print("\n=== plots ===")
     histories = visualize.load_histories()
     visualize.plot_loss_curves(histories)
+    visualize.plot_val_loss_comparison(histories)
     visualize.plot_accuracy_curves(histories)
     visualize.plot_model_comparison(test_results)
     visualize.plot_muspy_comparison(muspy_results)

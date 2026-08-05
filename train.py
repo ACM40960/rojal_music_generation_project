@@ -33,7 +33,7 @@ def _run_epoch(model, loader, criterion, optimizer=None, scaler=None):
         if is_train:
             optimizer.zero_grad()
             with torch.autocast(device_type="cuda", enabled=config.USE_AMP):
-                pitch_logits, dur_logits = model(xp, xd)
+                pitch_logits, dur_logits, _, _ = model(xp, xd, yp, yd)
                 loss, p_acc, d_acc = _step_loss_and_acc(pitch_logits, dur_logits, yp, yd, criterion)
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
@@ -42,8 +42,9 @@ def _run_epoch(model, loader, criterion, optimizer=None, scaler=None):
             scaler.update()
         else:
             with torch.no_grad():
-                pitch_logits, dur_logits = model(xp, xd)
+                pitch_logits, dur_logits, _, _ = model(xp, xd, yp, yd)
                 loss, p_acc, d_acc = _step_loss_and_acc(pitch_logits, dur_logits, yp, yd, criterion)
+
 
         total_loss += loss.item()
         pitch_acc_sum += p_acc
@@ -51,6 +52,22 @@ def _run_epoch(model, loader, criterion, optimizer=None, scaler=None):
         n_batches += 1
 
     return total_loss / n_batches, pitch_acc_sum / n_batches, dur_acc_sum / n_batches
+
+
+def _safe_torch_save(obj, f_path, max_retries=5):
+    for i in range(max_retries):
+        try:
+            tmp_p = f_path + ".tmp"
+            torch.save(obj, tmp_p)
+            if os.path.exists(f_path):
+                os.remove(f_path)
+            os.replace(tmp_p, f_path)
+            return
+        except Exception:
+            if i == max_retries - 1:
+                torch.save(obj, f_path)
+            else:
+                time.sleep(0.5)
 
 
 def train_model(model_name, bundle):
@@ -67,7 +84,7 @@ def train_model(model_name, bundle):
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="min", factor=config.LR_SCHEDULER_FACTOR, patience=config.LR_SCHEDULER_PATIENCE
     )
-    scaler = torch.amp.GradScaler("cuda", enabled=config.USE_AMP)
+    scaler = torch.cuda.amp.GradScaler(enabled=config.USE_AMP)
     criterion = nn.CrossEntropyLoss()
 
     history = {"train_loss": [], "val_loss": [], "train_pitch_acc": [], "train_dur_acc": [],
@@ -97,7 +114,7 @@ def train_model(model_name, bundle):
         if val_loss < best_val_loss - 1e-4:
             best_val_loss = val_loss
             epochs_without_improvement = 0
-            torch.save(model.state_dict(), ckpt_path)
+            _safe_torch_save(model.state_dict(), ckpt_path)
         else:
             epochs_without_improvement += 1
             if epochs_without_improvement >= config.EARLY_STOP_PATIENCE:
@@ -109,6 +126,7 @@ def train_model(model_name, bundle):
         json.dump(history, f)
 
     return model, history
+
 
 
 def evaluate_test_set(model, bundle):

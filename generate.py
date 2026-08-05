@@ -7,10 +7,15 @@ import config
 import dataset
 
 
-def _sample_with_temperature(logits, temperature):
+def _sample_with_temperature(logits, temperature=0.9, top_k=5):
     if temperature <= 0:
         return int(torch.argmax(logits).item())
-    probs = torch.softmax(logits / temperature, dim=-1)
+    logits = logits / temperature
+    if top_k is not None and top_k > 0 and top_k < logits.size(-1):
+        v, _ = torch.topk(logits, top_k)
+        min_topk = v[-1]
+        logits = torch.where(logits < min_topk, torch.full_like(logits, float('-inf')), logits)
+    probs = torch.softmax(logits, dim=-1)
     return int(torch.multinomial(probs, 1).item())
 
 
@@ -25,12 +30,10 @@ def generate_continuation(model, seed_pitch_idx, seed_dur_idx, n_steps, temperat
     for _ in range(n_steps):
         xp = torch.from_numpy(window_pitch).unsqueeze(0).to(device)
         xd = torch.from_numpy(window_dur).unsqueeze(0).to(device)
-        pitch_logits, dur_logits = model(xp, xd)
+        _, _, sampled_pitch, sampled_dur = model(xp, xd, y_pitch=None, y_dur=None, temperature=temperature)
 
-        next_pitch = np.array([_sample_with_temperature(pitch_logits[v][0], temperature)
-                                for v in range(config.NUM_VOICES)])
-        next_dur = np.array([_sample_with_temperature(dur_logits[v][0], temperature)
-                              for v in range(config.NUM_VOICES)])
+        next_pitch = sampled_pitch[0].cpu().numpy()
+        next_dur = sampled_dur[0].cpu().numpy()
 
         gen_pitch.append(next_pitch)
         gen_dur.append(next_dur)
@@ -38,6 +41,7 @@ def generate_continuation(model, seed_pitch_idx, seed_dur_idx, n_steps, temperat
         window_dur = np.vstack([window_dur[1:], next_dur])
 
     return np.array(gen_pitch), np.array(gen_dur)
+
 
 
 def cut_half_generate(model, piece, pitch_vocab, dur_vocab, temperature=0.9):
