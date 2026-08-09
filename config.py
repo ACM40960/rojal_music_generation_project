@@ -5,6 +5,7 @@ import torch
 
 SEED = 42
 
+# Project paths
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(ROOT_DIR, "outputs")
 PLOTS_DIR = os.path.join(OUTPUT_DIR, "plots")
@@ -14,22 +15,26 @@ CKPT_DIR = os.path.join(OUTPUT_DIR, "checkpoints")
 for d in (OUTPUT_DIR, PLOTS_DIR, MIDI_DIR, CKPT_DIR):
     os.makedirs(d, exist_ok=True)
 
+# SATB voice setup
 VOICE_NAMES = ["Soprano", "Alto", "Tenor", "Bass"]
 NUM_VOICES = 4
 
+# Sequence windowing & dataset splits
 WINDOW_SIZE = 32
 TRAIN_FRAC = 0.70
 VAL_FRAC = 0.15
-# remainder is test
 
+# Vocabulary special tokens
 PAD_TOKEN = "PAD"
 REST_TOKEN = "REST"
 
+# Model dimensions
 EMBED_DIM = 32
 HIDDEN_DIM = 128
 NUM_LAYERS = 2
 DROPOUT = 0.2
 
+# Optimizer & training settings
 BATCH_SIZE = 64
 MAX_EPOCHS = 200
 LR = 1e-3
@@ -39,6 +44,7 @@ GRAD_CLIP_NORM = 1.0
 LR_SCHEDULER_PATIENCE = 10
 LR_SCHEDULER_FACTOR = 0.7
 
+# Hardware device & mixed precision
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 USE_AMP = DEVICE == "cuda"
 

@@ -12,17 +12,9 @@ import generate
 import music_metrics
 import visualize
 
-# ==============================================================================
-# DEMONSTRATION CHORALE SELECTION
-# ==============================================================================
-# To select a different unseen test chorale for demonstration:
-#   Option 1: Change the integer value of CHORALE_INDEX below (e.g. 0, 1, 2...).
-#   Option 2: Run via command line with the --index flag:
-#             python demo_generate.py --index 3
-#   Option 3: Run with --list to view all available unseen test set chorales:
-#             python demo_generate.py --list
-# ==============================================================================
+# Unseen test chorale index for demo generation (configurable via --index)
 CHORALE_INDEX = 0
+
 
 
 def main(chorale_index=CHORALE_INDEX, temperature=0.9, list_chorales=False):
