@@ -1,0 +1,66 @@
+{
+  "mlp": {
+    "generated": {
+      "pitch_class_entropy": 2.928576931415125,
+      "scale_consistency": 0.9437836087328689,
+      "empty_beat_rate": 0.0
+    },
+    "real_bach": {
+      "pitch_class_entropy": 2.9607885321603997,
+      "scale_consistency": 0.9397970149730983,
+      "empty_beat_rate": 0.0
+    },
+    "continuation_note_accuracy": {
+      "pitch_match": 0.1487157965308335,
+      "duration_match": 0.5011209685790009
+    }
+  },
+  "rnn": {
+    "generated": {
+      "pitch_class_entropy": 2.9874584381968985,
+      "scale_consistency": 0.9307323752279985,
+      "empty_beat_rate": 0.0016260162601626031
+    },
+    "real_bach": {
+      "pitch_class_entropy": 2.9607885321603997,
+      "scale_consistency": 0.9397970149730983,
+      "empty_beat_rate": 0.0
+    },
+    "continuation_note_accuracy": {
+      "pitch_match": 0.13908524030372155,
+      "duration_match": 0.5014925828242391
+    }
+  },
+  "lstm": {
+    "generated": {
+      "pitch_class_entropy": 3.0006231017148792,
+      "scale_consistency": 0.9231340534751913,
+      "empty_beat_rate": 0.0
+    },
+    "real_bach": {
+      "pitch_class_entropy": 2.9607885321603997,
+      "scale_consistency": 0.9397970149730983,
+      "empty_beat_rate": 0.0
+    },
+    "continuation_note_accuracy": {
+      "pitch_match": 0.1349365449150666,
+      "duration_match": 0.5012192009844874
+    }
+  },
+  "gru": {
+    "generated": {
+      "pitch_class_entropy": 2.9295961849717407,
+      "scale_consistency": 0.9424148666936888,
+      "empty_beat_rate": 0.0
+    },
+    "real_bach": {
+      "pitch_class_entropy": 2.9607885321603997,
+      "scale_consistency": 0.9397970149730983,
+      "empty_beat_rate": 0.0
+    },
+    "continuation_note_accuracy": {
+      "pitch_match": 0.15172317273465366,
+      "duration_match": 0.47673519444219475
+    }
+  }
+}

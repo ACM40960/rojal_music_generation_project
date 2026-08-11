@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Status: Thesis Complete](https://img.shields.io/badge/Status-Thesis%20Complete-brightgreen.svg)]()
 
-> **M.Tech Thesis Research Project**  
+> **Project**  
 > An empirical comparative evaluation of **MLP**, **Vanilla RNN**, **LSTM**, and **GRU** architectures on next-event prediction and autoregressive music completion using synchronized four-voice (**SATB**) Bach chorales with a joint pitch-duration representation.
 
 ---
@@ -230,12 +230,12 @@ If referencing this codebase or research findings for academic work, please use 
 
 ```bibtex
 @mastersthesis{BachChoraleCompletion2026,
-  author       = {M.Tech Candidate},
+  author       = {Rojal Jyothish},
   title        = {Comparative Evaluation of Sequential Neural Architectures for Symbolic Music Completion},
-  school       = {Department of Computer Science & Engineering},
+  school       = {University College Dublin},
   year         = {2026},
-  type         = {M.Tech Thesis},
-  url          = {https://github.com/YourUsername/Bach-Chorale-Music-Completion}
+  type         = {Project},
+  url          = {https://github.com/ACM40960/rojal_music_generation_project}
 }
 ```
 

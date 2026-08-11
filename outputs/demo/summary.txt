@@ -1,0 +1,23 @@
+======================================================================
+DEMONSTRATION SUMMARY: Ich dank’ dir, lieber Herre
+======================================================================
+Selected Chorale     : J.S. Bach — Ich dank’ dir, lieber Herre
+Total Timesteps      : 79
+Prompt Length        : 39
+Continuation Length : 40
+
+----------------------------------------------------------------------
+OVERALL TEST SET PERFORMANCE (LSTM MODEL)
+----------------------------------------------------------------------
+Test Loss            : 7.2456372947227665
+Pitch Accuracy       : 62.51%
+Duration Accuracy    : 78.01%
+
+----------------------------------------------------------------------
+MUSPY EVALUATION (GENERATED VS GROUND TRUTH)
+----------------------------------------------------------------------
+Metric                   Generated (LSTM)     Real Bach (GT)
+Pitch Class Entropy    : 2.9385               2.9023
+Scale Consistency      : 0.9563               0.9688
+Empty Beat Rate        : 0.0000               0.0000
+======================================================================

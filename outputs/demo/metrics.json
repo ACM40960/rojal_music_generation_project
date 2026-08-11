@@ -1,0 +1,25 @@
+{
+  "chorale_info": {
+    "title": "Ich dank\u2019 dir, lieber Herre",
+    "total_timesteps": 79,
+    "prompt_length": 39,
+    "continuation_length": 40
+  },
+  "overall_test_set_metrics": {
+    "test_loss": 7.2456372947227665,
+    "test_pitch_acc": 0.6250952743902439,
+    "test_dur_acc": 0.7800923262770364
+  },
+  "muspy_metrics": {
+    "generated": {
+      "pitch_class_entropy": 2.9384759431198733,
+      "scale_consistency": 0.95625,
+      "empty_beat_rate": 0.0
+    },
+    "real_bach": {
+      "pitch_class_entropy": 2.9022884517412533,
+      "scale_consistency": 0.96875,
+      "empty_beat_rate": 0.0
+    }
+  }
+}
